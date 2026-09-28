@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Book an appointment | BeautySalam</title>
+<meta name="description" content="Book a haircut, colour or treatment online.">
+<!--
+=====================================================================
+  SALON BOOKING PAGE: SETUP GUIDE (for the salon owner)
+=====================================================================
+  Everything you need to change lives in the CONFIG object at the top
+  of the <script> near the bottom of this file:
+    - salonName, tagline, address, phone, ownerEmail
+    - opening hours per weekday, optional daily breaks, closed dates
+    - services (name, description, duration in minutes, price)
+    - blockedSlots: times already taken, by date
+
+  EMAIL NOTIFICATIONS
+  The page works in two modes:
+
+  1) EmailJS (recommended: emails arrive automatically)
+     a. Create a free account at https://www.emailjs.com
+     b. Email Services -> Add service -> connect the inbox that should
+        SEND the notifications. Copy the Service ID.
+     c. Email Templates -> Create template.
+          To email:  {{salon_email}}
+          Reply-to:  {{client_email}}
+          Subject:   New booking request {{reference}}: {{service}}
+          Body (use any of these variables):
+            {{client_name}}, {{client_email}}, {{client_phone}},
+            {{service}}, {{date}}, {{time}}, {{end_time}},
+            {{duration}}, {{price}}, {{notes}}, {{reference}}
+        Copy the Template ID.
+     d. Account -> General -> copy your Public Key.
+     e. Paste the three values into CONFIG.emailjs below.
+     f. In EmailJS -> Account -> Security, restrict requests to your
+        website's domain.
+
+  2) Fallback (no setup): if EmailJS is not configured, pressing
+     "Request appointment" opens the client's email app with a
+     pre-filled message to ownerEmail. The client must press send.
+
+  AVAILABILITY
+  This is a static page with no database, so it cannot see bookings
+  made by other clients. Treat each booking as a request you confirm
+  by reply. Add taken times to CONFIG.blockedSlots to hide them, or
+  connect a backend later for live availability.
+
+  DEPLOY: upload this single file to any web host (rename it to
+  index.html if it should be the home page).
+=====================================================================
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500;6..96,600&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --porcelain: #F6F4F7;
+    --paper: #FFFFFF;
+    --ink: #2B1D2E;
+    --muted: #6E6272;
+    --mist: #E4DEE6;
+    --rosewood: #9E3F5A;
+    --rosewood-deep: #7E2F46;
+    --blush: #F9ECEF;
+    --sage: #5F7F6E;
+    --sage-tint: #EAF1ED;
+    --display: "Bodoni Moda", "Didot", "Bodoni 72", Georgia, serif;
+    --body: "Figtree", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--porcelain);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--rosewood); outline-offset: 2px; }
+  .visually-hidden {
+    position: absolute !important; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap; border: 0; padding: 0; margin: -1px;
+  }
+
+  /* ---------- Masthead ---------- */
+  .masthead {
+    max-width: 1180px; margin: 0 auto;
+    padding: 48px 24px 32px;
+    display: grid; gap: 28px;
+    grid-template-columns: 1fr;
+    align-items: end;
+  }
+  .masthead h1 {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: clamp(2.7rem, 7vw, 5rem);
+    line-height: 0.95;
+    letter-spacing: -0.015em;
+    margin: 0 0 14px;
+  }
+  .masthead .tagline { margin: 0; color: var(--muted); font-size: 1.1rem; max-width: 34ch; }
+  .masthead .contact { margin: 14px 0 0; color: var(--muted); font-size: 0.95rem; }
+  .masthead .contact a { color: var(--ink); text-underline-offset: 3px; }
+  .hours {
+    margin: 0; padding: 0; list-style: none;
+    display: grid; grid-template-columns: auto 1fr; column-gap: 20px; row-gap: 2px;
+    font-size: 0.92rem; font-variant-numeric: tabular-nums;
+  }
+  .hours li { display: contents; }
+  .hours .d { color: var(--muted); }
+  .hours .is-today span { font-weight: 600; color: var(--ink); }
+  @media (min-width: 760px) {
+    .masthead { grid-template-columns: 1fr auto; padding-top: 64px; }
+  }
+
+  /* ---------- Layout ---------- */
+  .page {
+    max-width: 1180px; margin: 0 auto;
+    padding: 0 24px 64px;
+    display: grid; gap: 40px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  @media (min-width: 980px) {
+    .page { grid-template-columns: minmax(0, 1fr) 340px; gap: 48px; align-items: start; }
+  }
+  .step { padding-top: 8px; }
+  .step + .step { margin-top: 40px; }
+  .step-title {
+    display: flex; align-items: center; gap: 14px;
+    font-family: var(--display); font-weight: 500;
+    font-size: 1.65rem; line-height: 1.2; margin: 0 0 18px;
+  }
+  .step-no {
+    flex: none; width: 34px; height: 34px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-family: var(--body); font-size: 0.9rem; font-weight: 600;
+    border: 1px solid var(--ink);
+  }
+  .step.is-done .step-no { background: var(--ink); color: var(--porcelain); }
+  .when { display: grid; gap: 40px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 1140px) {
+    .when { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; }
+    .when .step + .step { margin-top: 0; }
+  }
+
+  /* ---------- Services ---------- */
+  .svc-group + .svc-group { margin-top: 22px; }
+  .svc-group h3 { font-size: 0.95rem; font-weight: 600; color: var(--muted); margin: 0 0 10px; }
+  .svc-list { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 640px) { .svc-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .svc {
+    display: grid; grid-template-columns: 1fr auto; gap: 4px 16px;
+    padding: 16px 18px;
+    background: var(--paper);
+    border: 1px solid var(--mist);
+    border-radius: 14px;
+    cursor: pointer;
+    transition: border-color .15s, background-color .15s;
+  }
+  .svc:hover { border-color: #CBBFCD; }
+  .svc:has(input:checked) { border-color: var(--rosewood); background: var(--blush); box-shadow: inset 0 0 0 1px var(--rosewood); }
+  .svc:has(input:focus-visible) { outline: 2px solid var(--rosewood); outline-offset: 2px; }
+  .svc input { position: absolute; opacity: 0; pointer-events: none; }
+  .svc-name { font-weight: 600; }
+  .svc-price { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .svc-desc { grid-column: 1 / -1; color: var(--muted); font-size: 0.9rem; }
+  .svc-dur { grid-column: 1 / -1; font-size: 0.85rem; color: var(--sage); font-weight: 500; }
+
+  /* ---------- Calendar ---------- */
+  .panel { background: var(--paper); border: 1px solid var(--mist); border-radius: 18px; padding: 20px; }
+  .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .cal-title { font-family: var(--display); font-size: 1.3rem; font-weight: 500; margin: 0; }
+  .cal-nav { display: flex; gap: 6px; }
+  .icon-btn {
+    width: 40px; height: 40px; border-radius: 50%;
+    border: 1px solid var(--mist); background: transparent;
+    display: grid; place-items: center;
+    transition: background-color .15s;
+  }
+  .icon-btn:hover:not(:disabled) { background: var(--porcelain); }
+  .icon-btn:disabled { opacity: .35; cursor: default; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-wd { text-align: center; font-size: 0.8rem; color: var(--muted); padding-bottom: 6px; }
+  .cal-day {
+    position: relative; aspect-ratio: 1; width: 100%;
+    border: 0; border-radius: 50%; background: transparent;
+    font-size: 0.95rem; font-variant-numeric: tabular-nums;
+    transition: background-color .15s, color .15s;
+  }
+  .cal-day::after {
+    content: ""; position: absolute; left: 50%; bottom: 14%;
+    width: 4px; height: 4px; margin-left: -2px; border-radius: 50%;
+    background: var(--sage);
+  }
+  .cal-day:hover:not(:disabled) { background: var(--sage-tint); }
+  .cal-day:disabled { color: #B9AFBB; cursor: default; }
+  .cal-day:disabled::after { display: none; }
+  .cal-day.is-today { box-shadow: inset 0 0 0 1px var(--rosewood); }
+  .cal-day.is-selected { background: var(--ink); color: var(--porcelain); }
+  .cal-day.is-selected::after { background: var(--porcelain); }
+  .cal-legend { margin: 12px 0 0; font-size: 0.85rem; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .cal-legend::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--sage); }
+
+  /* ---------- Timeline ---------- */
+  .tl-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+  .tl-date { font-family: var(--display); font-size: 1.3rem; font-weight: 500; margin: 0; }
+  .tl-count { font-size: 0.85rem; color: var(--muted); white-space: nowrap; }
+  .tl-scroll { max-height: 520px; overflow-y: auto; margin: 0 -8px; padding: 0 8px; overscroll-behavior: contain; }
+  .tl-list { list-style: none; margin: 0; padding: 0; }
+  .tl-slot {
+    display: grid; grid-template-columns: 74px 1fr; align-items: stretch;
+    width: 100%; height: 40px; padding: 0; border: 0; background: none; text-align: left;
+  }
+  .tl-slot:disabled { cursor: default; }
+  .tl-time {
+    align-self: center; padding-right: 12px; text-align: right;
+    font-size: 0.82rem; color: var(--muted); font-variant-numeric: tabular-nums;
+  }
+  .tl-slot.on-hour .tl-time { color: var(--ink); font-weight: 600; }
+  .tl-bar {
+    position: relative; margin-block: 2px; border-radius: 8px;
+    display: flex; align-items: center; padding: 0 12px;
+    font-size: 0.82rem; color: var(--muted);
+    border-left: 2px solid transparent;
+    transition: background-color .12s, color .12s;
+  }
+  .tl-slot.on-hour .tl-bar::before {
+    content: ""; position: absolute; left: -2px; right: 0; top: -3px;
+    border-top: 1px solid var(--mist);
+  }
+  .tl-slot.is-open .tl-bar { background: var(--sage-tint); border-left-color: var(--sage); color: var(--sage); }
+  .tl-slot.is-open:hover .tl-bar, .tl-slot.preview .tl-bar { background: var(--blush); border-left-color: var(--rosewood); color: var(--rosewood); }
+  .tl-slot.is-busy .tl-bar {
+    background: repeating-linear-gradient(135deg, #F1EDF2 0 6px, #E9E3EB 6px 12px);
+  }
+  .tl-slot.is-break .tl-bar { background: #F1EDF2; }
+  .tl-slot.is-nofit .tl-bar { border: 1px dashed var(--mist); }
+  .tl-slot.in-span .tl-bar {
+    background: var(--rosewood); border-left-color: var(--rosewood-deep); color: #fff;
+    margin-block: 0; border-radius: 0;
+  }
+  .tl-slot.in-span.span-start .tl-bar { margin-top: 2px; border-top-left-radius: 8px; border-top-right-radius: 8px; }
+  .tl-slot.in-span.span-end .tl-bar { margin-bottom: 2px; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; }
+  .tl-slot.in-span .tl-bar::before { display: none; }
+  .tl-slot.in-span.span-start .tl-bar { font-weight: 600; }
+  .empty {
+    padding: 36px 20px; text-align: center; color: var(--muted);
+    border: 1px dashed var(--mist); border-radius: 14px;
+  }
+
+  /* ---------- Form ---------- */
+  .fields { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 640px) {
+    .fields { grid-template-columns: 1fr 1fr; }
+    .field.wide { grid-column: 1 / -1; }
+  }
+  .field label { display: block; font-weight: 500; font-size: 0.95rem; margin-bottom: 6px; }
+  .field .opt { color: var(--muted); font-weight: 400; }
+  .field input, .field textarea {
+    width: 100%; padding: 12px 14px;
+    border: 1px solid #D6CED8; border-radius: 12px; background: var(--paper);
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .field textarea { min-height: 96px; resize: vertical; }
+  .field input:focus, .field textarea:focus { outline: none; border-color: var(--rosewood); box-shadow: 0 0 0 3px rgba(158, 63, 90, .15); }
+  .field [aria-invalid="true"] { border-color: var(--rosewood-deep); background: #FFF9FA; }
+  .err { min-height: 1.2em; margin: 6px 0 0; font-size: 0.85rem; color: var(--rosewood-deep); }
+
+  /* ---------- Summary ---------- */
+  .summary {
+    background: var(--ink); color: var(--porcelain);
+    border-radius: 22px; padding: 28px;
+  }
+  @media (min-width: 980px) { .summary { position: sticky; top: 24px; } }
+  .summary h2 { font-family: var(--display); font-weight: 500; font-size: 1.6rem; margin: 0 0 20px; }
+  .sum-list { margin: 0; display: grid; gap: 14px; }
+  .sum-list div { display: grid; gap: 2px; }
+  .sum-list dt { font-size: 0.82rem; color: #BFB1C2; }
+  .sum-list dd { margin: 0; font-weight: 500; }
+  .sum-list dd.pending { color: #8F8193; font-weight: 400; }
+  .sum-total {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin: 22px 0; padding-top: 18px; border-top: 1px solid rgba(246, 244, 247, .18);
+  }
+  .sum-total strong { font-family: var(--display); font-size: 1.7rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 52px; padding: 0 22px; border-radius: 999px; border: 0;
+    font-weight: 600; font-size: 1rem;
+    transition: background-color .15s, opacity .15s;
+  }
+  .btn-primary { width: 100%; background: var(--rosewood); color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #B04A67; }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+  .summary .btn-primary:focus-visible { outline-color: #F2C6D2; }
+  .sum-note { margin: 14px 0 0; font-size: 0.85rem; color: #BFB1C2; }
+  .status { margin: 14px 0 0; font-size: 0.9rem; color: #F5C3CF; }
+  .status:empty { display: none; }
+
+  /* ---------- Dialog ---------- */
+  dialog {
+    width: min(460px, calc(100vw - 32px));
+    border: 0; border-radius: 22px; padding: 32px;
+    background: var(--paper); color: var(--ink);
+  }
+  dialog::backdrop { background: rgba(43, 29, 46, .5); }
+  dialog[open] { animation: rise .25s ease-out; }
+  @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+  .confirm-icon { width: 52px; height: 52px; border-radius: 50%; background: var(--sage-tint); display: grid; place-items: center; margin-bottom: 18px; }
+  dialog h2 { font-family: var(--display); font-weight: 500; font-size: 1.8rem; line-height: 1.15; margin: 0 0 10px; }
+  dialog p { margin: 0 0 18px; color: var(--muted); }
+  .confirm-box { background: var(--porcelain); border-radius: 14px; padding: 16px 18px; margin-bottom: 22px; }
+  .confirm-box dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 0.95rem; }
+  .confirm-box dt { color: var(--muted); }
+  .confirm-box dd { margin: 0; font-weight: 500; }
+  .dialog-actions { display: grid; gap: 10px; }
+  .btn-secondary { background: transparent; border: 1px solid #D6CED8; color: var(--ink); }
+  .btn-secondary:hover { background: var(--porcelain); }
+  .btn-dark { background: var(--ink); color: var(--porcelain); }
+  .btn-dark:hover { background: #3D2A41; }
+
+  footer { max-width: 1180px; margin: 0 auto; padding: 24px; color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--mist); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+  }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div>
+    <h1 id="salonName">BeautySalam</h1>
+    <p class="tagline" id="tagline"></p>
+    <p class="contact" id="contact"></p>
+  </div>
+  <ul class="hours" id="hours" aria-label="Opening hours"></ul>
+</header>
+
+<form id="bookingForm" novalidate>
+<div class="page">
+  <main>
+    <section class="step" id="step-service" aria-labelledby="h-service">
+      <h2 class="step-title" id="h-service"><span class="step-no">1</span>Choose a service</h2>
+      <div id="services"></div>
+    </section>
+
+    <div class="when">
+      <section class="step" id="step-date" aria-labelledby="h-date">
+        <h2 class="step-title" id="h-date"><span class="step-no">2</span>Pick a date</h2>
+        <div class="panel">
+          <div class="cal-head">
+            <p class="cal-title" id="calTitle" aria-live="polite"></p>
+            <div class="cal-nav">
+              <button type="button" class="icon-btn" id="calPrev" aria-label="Previous month">
+                <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <button type="button" class="icon-btn" id="calNext" aria-label="Next month">
+                <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="cal-grid" id="calWeekdays" aria-hidden="true"></div>
+          <div class="cal-grid" id="calGrid"></div>
+          <p class="cal-legend">Days with open times</p>
+        </div>
+      </section>
+
+      <section class="step" id="step-time" aria-labelledby="h-time">
+        <h2 class="step-title" id="h-time"><span class="step-no">3</span>Pick a time</h2>
+        <div class="panel" id="timeline"></div>
+      </section>
+    </div>
+
+    <section class="step" id="step-details" aria-labelledby="h-details">
+      <h2 class="step-title" id="h-details"><span class="step-no">4</span>Your details</h2>
+      <div class="fields">
+        <div class="field wide">
+          <label for="f-name">Full name</label>
+          <input id="f-name" name="name" type="text" autocomplete="name" required aria-describedby="err-name">
+          <p class="err" id="err-name"></p>
+        </div>
+        <div class="field">
+          <label for="f-email">Email</label>
+          <input id="f-email" name="email" type="email" autocomplete="email" inputmode="email" required aria-describedby="err-email">
+          <p class="err" id="err-email"></p>
+        </div>
+        <div class="field">
+          <label for="f-phone">Phone</label>
+          <input id="f-phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" required aria-describedby="err-phone">
+          <p class="err" id="err-phone"></p>
+        </div>
+        <div class="field wide">
+          <label for="f-notes">Notes for your stylist <span class="opt">(optional)</span></label>
+          <textarea id="f-notes" name="notes" maxlength="500" placeholder="Hair length, colour history, a preferred stylist…"></textarea>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <aside class="summary" aria-labelledby="h-summary">
+    <h2 id="h-summary">Your appointment</h2>
+    <dl class="sum-list">
+      <div><dt>Service</dt><dd id="sumService" class="pending">Not chosen yet</dd></div>
+      <div><dt>Date</dt><dd id="sumDate" class="pending">Not chosen yet</dd></div>
+      <div><dt>Time</dt><dd id="sumTime" class="pending">Not chosen yet</dd></div>
+    </dl>
+    <div class="sum-total"><span>Estimated price</span><strong id="sumPrice">–</strong></div>
+    <button type="submit" class="btn btn-primary" id="submitBtn" disabled>Request appointment</button>
+    <p class="status" id="status" role="alert"></p>
+    <p class="sum-note">We'll confirm your appointment by email or phone. Final price may vary with hair length.</p>
+  </aside>
+</div>
+</form>
+
+<footer id="footer"></footer>
+
+<dialog id="confirmDialog" aria-labelledby="confirmTitle">
+  <div class="confirm-icon" aria-hidden="true">
+    <svg width="24" height="24" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="#5F7F6E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </div>
+  <h2 id="confirmTitle">Appointment requested</h2>
+  <p id="confirmText"></p>
+  <div class="confirm-box"><dl id="confirmDetails"></dl></div>
+  <div class="dialog-actions">
+    <button type="button" class="btn btn-dark" id="icsBtn">Add to calendar</button>
+    <button type="button" class="btn btn-secondary" id="againBtn">Book another appointment</button>
+  </div>
+</dialog>
+
+<noscript><p style="padding:24px;text-align:center">Online booking needs JavaScript. Please call us to book.</p></noscript>
+
+<!-- EmailJS browser SDK (only used when CONFIG.emailjs is filled in) -->
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script>
+/* =================================================================
+   CONFIG: edit this block to set up your salon
+   ================================================================= */
+const CONFIG = {
+  salonName: "BeautySalam",
+  tagline: "Cuts, colour and care, booked in a minute.",
+  address: "123 Main Street",
+  phone: "+1 (555) 010-2030",
+  ownerEmail: "owner@example.com",        // where booking requests go
+  locale: "en-US",                        // date/time formatting, e.g. "es-EC"
+  currency: "USD",
+
+  slotMinutes: 30,                        // timeline interval
+  minLeadMinutes: 120,                    // earliest booking = now + 2h
+  maxDaysAhead: 60,                       // how far ahead clients can book
+
+  // Opening hours by weekday (0 = Sunday ... 6 = Saturday). null = closed.
+  hours: {
+    0: null,
+    1: ["10:00", "18:00"],
+    2: ["09:00", "19:00"],
+    3: ["09:00", "19:00"],
+    4: ["09:00", "20:00"],
+    5: ["09:00", "20:00"],
+    6: ["09:00", "17:00"]
+  },
+  breaks: [],                             // daily breaks, e.g. [["13:00", "14:00"]]
+  closedDates: ["2026-12-25", "2027-01-01"],
+  blockedSlots: {                         // times already taken, e.g.
+    // "2026-10-03": [["10:00", "12:00"], ["15:30", "16:30"]]
+  },
+
+  services: [
+    { id: "cut-women",  group: "Cut & style", name: "Women's cut & style", desc: "Consultation, wash, cut and blow-dry.", duration: 60,  price: 45 },
+    { id: "cut-men",    group: "Cut & style", name: "Men's cut",           desc: "Clipper or scissor cut with a wash.",   duration: 30,  price: 25 },
+    { id: "blowdry",    group: "Cut & style", name: "Blow-dry & styling",  desc: "Wash and a smooth or voluminous finish.", duration: 45, price: 35 },
+    { id: "updo",       group: "Cut & style", name: "Event updo",          desc: "Pinned styles for weddings and evenings.", duration: 60, price: 60 },
+    { id: "color",      group: "Colour",      name: "Full colour",         desc: "Root-to-tip single colour with gloss.",  duration: 120, price: 90 },
+    { id: "roots",      group: "Colour",      name: "Root touch-up",       desc: "Regrowth coverage up to 3 cm.",          duration: 90,  price: 60 },
+    { id: "balayage",   group: "Colour",      name: "Balayage",            desc: "Hand-painted highlights and toner.",     duration: 180, price: 150 },
+    { id: "keratin",    group: "Treatments",  name: "Keratin smoothing",   desc: "Frizz control that lasts up to 3 months.", duration: 150, price: 140 },
+    { id: "mask",       group: "Treatments",  name: "Repair mask",         desc: "Deep conditioning for dry or coloured hair.", duration: 30, price: 20 }
+  ],
+
+  emailjs: {
+    publicKey: "",                        // e.g. "AbCdEf123456"
+    serviceId: "",                        // e.g. "service_x1y2z3"
+    templateId: ""                        // e.g. "template_a1b2c3"
+  }
+};
+
+/* =================================================================
+   Helpers
+   ================================================================= */
+const $ = (s, r = document) => r.querySelector(s);
+const pad = n => String(n).padStart(2, "0");
+const toMin = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+const toHHMM = m => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+const keyOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const startOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const sameDay = (a, b) => a && b && keyOf(a) === keyOf(b);
+const money = n => new Intl.NumberFormat(CONFIG.locale, { style: "currency", currency: CONFIG.currency, maximumFractionDigits: 0 }).format(n);
+const fmtTime = m => new Date(2000, 0, 1, Math.floor(m / 60), m % 60).toLocaleTimeString(CONFIG.locale, { hour: "numeric", minute: "2-digit" });
+const fmtDate = (d, opts = { weekday: "long", month: "long", day: "numeric" }) => d.toLocaleDateString(CONFIG.locale, opts);
+const fmtDur = m => { const h = Math.floor(m / 60), r = m % 60; return [h ? `${h} h` : "", r ? `${r} min` : ""].filter(Boolean).join(" "); };
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+/* Bookings made on this device (prevents double-booking the same slot here) */
+const STORE_KEY = "salon-bookings-v1";
+function loadBookings() {
+  try { return JSON.parse(localStorage.getItem(STORE_KEY)) || []; } catch { return []; }
+}
+function saveBooking(b) {
+  try { const all = loadBookings(); all.push(b); localStorage.setItem(STORE_KEY, JSON.stringify(all)); } catch {}
+}
+
+/* =================================================================
+   Availability logic
+   ================================================================= */
+function dayHours(d) {
+  if (CONFIG.closedDates.includes(keyOf(d))) return null;
+  const h = CONFIG.hours[d.getDay()];
+  return h ? { open: toMin(h[0]), close: toMin(h[1]) } : null;
+}
+function busyRanges(d) {
+  const k = keyOf(d), r = [];
+  CONFIG.breaks.forEach(([a, b]) => r.push({ s: toMin(a), e: toMin(b), kind: "break" }));
+  (CONFIG.blockedSlots[k] || []).forEach(([a, b]) => r.push({ s: toMin(a), e: toMin(b), kind: "busy" }));
+  loadBookings().filter(b => b.date === k).forEach(b => r.push({ s: toMin(b.time), e: toMin(b.time) + b.duration, kind: "busy" }));
+  return r;
+}
+/* returns: open | past | busy | break | nofit */
+function slotState(d, start, dur, hours, busy) {
+  const at = new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.floor(start / 60), start % 60);
+  if (at - Date.now() < CONFIG.minLeadMinutes * 60000) return "past";
+  const inside = busy.find(r => start >= r.s && start < r.e);
+  if (inside) return inside.kind;
+  if (start + dur > hours.close) return "nofit";
+  if (busy.some(r => start < r.e && start + dur > r.s)) return "nofit";
+  return "open";
+}
+function openSlots(d) {
+  const h = dayHours(d);
+  if (!h) return [];
+  const dur = state.service ? state.service.duration : CONFIG.slotMinutes;
+  const busy = busyRanges(d), out = [];
+  for (let m = h.open; m < h.close; m += CONFIG.slotMinutes) if (slotState(d, m, dur, h, busy) === "open") out.push(m);
+  return out;
+}
+
+/* =================================================================
+   State
+   ================================================================= */
+const today = startOfDay(new Date());
+const lastDay = new Date(today); lastDay.setDate(lastDay.getDate() + CONFIG.maxDaysAhead);
+const state = { service: null, date: null, time: null, viewYear: today.getFullYear(), viewMonth: today.getMonth(), triedSubmit: false };
+
+/* =================================================================
+   Header, footer
+   ================================================================= */
+function renderHeader() {
+  document.title = `Book an appointment | ${CONFIG.salonName}`;
+  $("#salonName").textContent = CONFIG.salonName;
+  $("#tagline").textContent = CONFIG.tagline;
+  const tel = CONFIG.phone.replace(/[^\d+]/g, "");
+  $("#contact").innerHTML = `${esc(CONFIG.address)}<br><a href="tel:${esc(tel)}">${esc(CONFIG.phone)}</a>`;
+  const list = $("#hours");
+  const order = [1, 2, 3, 4, 5, 6, 0];
+  list.innerHTML = order.map(i => {
+    const h = CONFIG.hours[i];
+    const day = new Date(2024, 0, 7 + i).toLocaleDateString(CONFIG.locale, { weekday: "short" });
+    const val = h ? `${fmtTime(toMin(h[0]))} – ${fmtTime(toMin(h[1]))}` : "Closed";
+    return `<li class="${i === new Date().getDay() ? "is-today" : ""}"><span class="d">${esc(day)}</span><span>${esc(val)}</span></li>`;
+  }).join("");
+  $("#footer").textContent = `© ${new Date().getFullYear()} ${CONFIG.salonName}. ${CONFIG.address}. ${CONFIG.phone}`;
+}
+
+/* =================================================================
+   Services
+   ================================================================= */
+function renderServices() {
+  const groups = [...new Set(CONFIG.services.map(s => s.group))];
+  $("#services").innerHTML = groups.map(g => `
+    <div class="svc-group" role="radiogroup" aria-label="${esc(g)}">
+      <h3>${esc(g)}</h3>
+      <div class="svc-list">
+        ${CONFIG.services.filter(s => s.group === g).map(s => `
+          <label class="svc">
+            <input type="radio" name="service" value="${esc(s.id)}">
+            <span class="svc-name">${esc(s.name)}</span>
+            <span class="svc-price">${money(s.price)}</span>
+            <span class="svc-desc">${esc(s.desc)}</span>
+            <span class="svc-dur">${fmtDur(s.duration)}</span>
+          </label>`).join("")}
+      </div>
+    </div>`).join("");
+  $("#services").addEventListener("change", e => {
+    if (e.target.name !== "service") return;
+    state.service = CONFIG.services.find(s => s.id === e.target.value);
+    if (state.date && state.time != null && !openSlots(state.date).includes(state.time)) state.time = null;
+    if (state.date && !openSlots(state.date).length) { state.date = null; state.time = null; }
+    renderAll();
+  });
+}
+
+/* =================================================================
+   Calendar
+   ================================================================= */
+function renderWeekdays() {
+  $("#calWeekdays").innerHTML = [0, 1, 2, 3, 4, 5, 6].map(i =>
+    `<div class="cal-wd">${esc(new Date(2024, 0, 1 + i).toLocaleDateString(CONFIG.locale, { weekday: "narrow" }))}</div>`).join("");
+}
+function renderCalendar() {
+  const y = state.viewYear, mo = state.viewMonth;
+  $("#calTitle").textContent = new Date(y, mo, 1).toLocaleDateString(CONFIG.locale, { month: "long", year: "numeric" });
+  const grid = $("#calGrid");
+  grid.innerHTML = "";
+  const offset = (new Date(y, mo, 1).getDay() + 6) % 7;
+  const days = new Date(y, mo + 1, 0).getDate();
+  for (let i = 0; i < offset; i++) grid.appendChild(document.createElement("div"));
+  for (let n = 1; n <= days; n++) {
+    const d = new Date(y, mo, n);
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "cal-day";
+    b.textContent = n;
+    const available = d >= today && d <= lastDay && openSlots(d).length > 0;
+    b.disabled = !available;
+    if (sameDay(d, today)) b.classList.add("is-today");
+    if (sameDay(d, state.date)) { b.classList.add("is-selected"); b.setAttribute("aria-pressed", "true"); }
+    b.setAttribute("aria-label", `${fmtDate(d)}${available ? "" : ", unavailable"}`);
+    b.addEventListener("click", () => { state.date = d; state.time = null; renderAll(); });
+    grid.appendChild(b);
+  }
+  $("#calPrev").disabled = y === today.getFullYear() && mo === today.getMonth();
+  $("#calNext").disabled = new Date(y, mo + 1, 1) > lastDay;
+}
+$("#calPrev").addEventListener("click", () => shiftMonth(-1));
+$("#calNext").addEventListener("click", () => shiftMonth(1));
+function shiftMonth(n) {
+  const d = new Date(state.viewYear, state.viewMonth + n, 1);
+  state.viewYear = d.getFullYear(); state.viewMonth = d.getMonth();
+  renderCalendar();
+}
+
+/* =================================================================
+   Timeline
+   ================================================================= */
+const STATE_TEXT = { open: "", past: "Unavailable", busy: "Booked", break: "Break", nofit: "Not enough time for this service" };
+
+function renderTimeline() {
+  const box = $("#timeline");
+  if (!state.service) { box.innerHTML = `<div class="empty">Choose a service to see which times fit.</div>`; return; }
+  if (!state.date) { box.innerHTML = `<div class="empty">Pick a date to see open times.</div>`; return; }
+
+  const d = state.date, h = dayHours(d), busy = busyRanges(d), dur = state.service.duration;
+  const count = openSlots(d).length;
+  let rows = "";
+  for (let m = h.open; m < h.close; m += CONFIG.slotMinutes) {
+    const st = slotState(d, m, dur, h, busy);
+    const label = st === "open" ? `Start at ${fmtTime(m)}, ends ${fmtTime(m + dur)}` : `${fmtTime(m)}, ${STATE_TEXT[st].toLowerCase()}`;
+    rows += `<li><button type="button" class="tl-slot is-${st}${m % 60 === 0 ? " on-hour" : ""}" data-min="${m}" ${st === "open" ? "" : "disabled"} aria-label="${esc(label)}">
+      <span class="tl-time">${fmtTime(m)}</span><span class="tl-bar">${esc(STATE_TEXT[st])}</span></button></li>`;
+  }
+  box.innerHTML = `
+    <div class="tl-head">
+      <p class="tl-date">${esc(fmtDate(d, { weekday: "long", month: "short", day: "numeric" }))}</p>
+      <span class="tl-count">${count} start time${count === 1 ? "" : "s"}</span>
+    </div>
+    <div class="tl-scroll"><ol class="tl-list">${rows}</ol></div>`;
+
+  const list = box.querySelector(".tl-list");
+  list.addEventListener("click", e => {
+    const b = e.target.closest(".tl-slot.is-open");
+    if (!b) return;
+    state.time = Number(b.dataset.min);
+    paintSpan("preview", null);
+    paintSelection();
+    updateSummary();
+    markSteps();
+  });
+  list.addEventListener("pointerover", e => {
+    const b = e.target.closest(".tl-slot.is-open");
+    paintSpan("preview", b ? Number(b.dataset.min) : null);
+  });
+  list.addEventListener("pointerleave", () => paintSpan("preview", null));
+  paintSelection();
+
+  const target = list.querySelector(state.time != null ? ".span-start" : ".tl-slot.is-open");
+  if (target) {
+    const sc = box.querySelector(".tl-scroll");
+    sc.scrollTop = Math.max(0, target.offsetTop - sc.offsetTop - 40);
+  }
+}
+function paintSpan(cls, start) {
+  document.querySelectorAll(`.tl-slot.${cls}`).forEach(el => el.classList.remove(cls));
+  if (start == null || !state.service) return;
+  const end = start + state.service.duration;
+  document.querySelectorAll(".tl-slot").forEach(el => {
+    const m = Number(el.dataset.min);
+    if (m >= start && m < end && (m !== start || cls === "preview")) el.classList.add(cls);
+  });
+}
+function paintSelection() {
+  document.querySelectorAll(".tl-slot").forEach(el => {
+    el.classList.remove("in-span", "span-start", "span-end");
+    if (!el.classList.contains("is-open") && !el.classList.contains("is-nofit")) {
+      el.querySelector(".tl-bar").textContent = STATE_TEXT[[...el.classList].find(c => c.startsWith("is-")).slice(3)] || "";
+    } else {
+      el.querySelector(".tl-bar").textContent = el.classList.contains("is-nofit") ? STATE_TEXT.nofit : "";
+    }
+    el.removeAttribute("aria-pressed");
+  });
+  if (state.time == null) return;
+  const start = state.time, end = start + state.service.duration;
+  const rows = [...document.querySelectorAll(".tl-slot")].filter(el => { const m = Number(el.dataset.min); return m >= start && m < end; });
+  rows.forEach((el, i) => {
+    el.classList.add("in-span");
+    el.querySelector(".tl-bar").textContent = "";
+    if (i === 0) {
+      el.classList.add("span-start");
+      el.setAttribute("aria-pressed", "true");
+      el.querySelector(".tl-bar").textContent = `${state.service.name}, until ${fmtTime(end)}`;
+    }
+    if (i === rows.length - 1) el.classList.add("span-end");
+  });
+}
+
+/* =================================================================
+   Summary + steps
+   ================================================================= */
+function setSum(id, text) {
+  const el = $(id);
+  el.textContent = text || "Not chosen yet";
+  el.classList.toggle("pending", !text);
+}
+function updateSummary() {
+  const s = state.service;
+  setSum("#sumService", s ? `${s.name} (${fmtDur(s.duration)})` : "");
+  setSum("#sumDate", state.date ? fmtDate(state.date) : "");
+  setSum("#sumTime", state.time != null ? `${fmtTime(state.time)} – ${fmtTime(state.time + s.duration)}` : "");
+  $("#sumPrice").textContent = s ? money(s.price) : "–";
+  $("#submitBtn").disabled = !(s && state.date && state.time != null);
+}
+function markSteps() {
+  $("#step-service").classList.toggle("is-done", !!state.service);
+  $("#step-date").classList.toggle("is-done", !!state.date);
+  $("#step-time").classList.toggle("is-done", state.time != null);
+}
+function renderAll() {
+  renderCalendar();
+  renderTimeline();
+  updateSummary();
+  markSteps();
+  setStatus("");
+}
+
+/* =================================================================
+   Form validation
+   ================================================================= */
+const form = $("#bookingForm");
+const RULES = {
+  name: v => v.trim().length >= 2 || "Enter your full name.",
+  email: v => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.trim()) || "Enter an email like name@example.com.",
+  phone: v => v.replace(/\D/g, "").length >= 7 || "Enter a phone number with at least 7 digits."
+};
+function validateField(name) {
+  const input = form.elements[name], res = RULES[name](input.value), err = $(`#err-${name}`);
+  if (res === true) { input.removeAttribute("aria-invalid"); err.textContent = ""; return true; }
+  input.setAttribute("aria-invalid", "true"); err.textContent = res; return false;
+}
+Object.keys(RULES).forEach(n => {
+  form.elements[n].addEventListener("blur", () => { if (state.triedSubmit || form.elements[n].value) validateField(n); });
+  form.elements[n].addEventListener("input", () => { if (form.elements[n].hasAttribute("aria-invalid")) validateField(n); });
+});
+function setStatus(msg) { $("#status").textContent = msg; }
+
+/* =================================================================
+   Email notification
+   ================================================================= */
+function emailBody(b) {
+  return [
+    `New booking request ${b.ref}`,
+    ``,
+    `Service:  ${b.service} (${fmtDur(b.duration)})`,
+    `Date:     ${b.dateLabel}`,
+    `Time:     ${b.timeLabel} – ${b.endLabel}`,
+    `Price:    ${b.priceLabel}`,
+    ``,
+    `Client:   ${b.name}`,
+    `Email:    ${b.email}`,
+    `Phone:    ${b.phone}`,
+    `Notes:    ${b.notes || "None"}`
+  ].join("\n");
+}
+async function notifyOwner(b) {
+  const ej = CONFIG.emailjs;
+  if (ej.publicKey && ej.serviceId && ej.templateId && window.emailjs) {
+    await window.emailjs.send(ej.serviceId, ej.templateId, {
+      salon_email: CONFIG.ownerEmail,
+      salon_name: CONFIG.salonName,
+      reference: b.ref,
+      client_name: b.name,
+      client_email: b.email,
+      client_phone: b.phone,
+      reply_to: b.email,
+      service: b.service,
+      date: b.dateLabel,
+      time: b.timeLabel,
+      end_time: b.endLabel,
+      duration: fmtDur(b.duration),
+      price: b.priceLabel,
+      notes: b.notes || "None",
+      message: emailBody(b)
+    }, { publicKey: ej.publicKey });
+    return "sent";
+  }
+  const subject = `Booking request ${b.ref}: ${b.service}, ${b.dateLabel} at ${b.timeLabel}`;
+  window.location.href = `mailto:${CONFIG.ownerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(emailBody(b))}`;
+  return "mailto";
+}
+
+/* =================================================================
+   Submit
+   ================================================================= */
+form.addEventListener("submit", async e => {
+  e.preventDefault();
+  state.triedSubmit = true;
+  setStatus("");
+  if (!state.service || !state.date || state.time == null) { setStatus("Choose a service, date and time before requesting."); return; }
+  const valid = Object.keys(RULES).map(validateField).every(Boolean);
+  if (!valid) {
+    setStatus("Check your details above.");
+    form.querySelector('[aria-invalid="true"]').focus();
+    return;
+  }
+  if (!openSlots(state.date).includes(state.time)) {
+    setStatus("That time is no longer available. Pick another time.");
+    state.time = null; renderAll(); return;
+  }
+
+  const s = state.service;
+  const b = {
+    ref: "BS-" + Date.now().toString(36).toUpperCase().slice(-6),
+    serviceId: s.id, service: s.name, duration: s.duration, price: s.price, priceLabel: money(s.price),
+    date: keyOf(state.date), dateLabel: fmtDate(state.date, { weekday: "long", year: "numeric", month: "long", day: "numeric" }),
+    time: toHHMM(state.time), timeLabel: fmtTime(state.time), endLabel: fmtTime(state.time + s.duration),
+    name: form.elements.name.value.trim(), email: form.elements.email.value.trim(),
+    phone: form.elements.phone.value.trim(), notes: form.elements.notes.value.trim(),
+    createdAt: new Date().toISOString()
+  };
+
+  const btn = $("#submitBtn");
+  btn.disabled = true;
+  btn.textContent = "Sending request…";
+  try {
+    const mode = await notifyOwner(b);
+    saveBooking(b);
+    showConfirmation(b, mode);
+  } catch (err) {
+    console.error("Booking email failed:", err);
+    setStatus(`Your request didn't go through. Try again, or call us at ${CONFIG.phone}.`);
+  } finally {
+    btn.textContent = "Request appointment";
+    updateSummary();
+  }
+});
+
+/* =================================================================
+   Confirmation + calendar file
+   ================================================================= */
+let lastBooking = null;
+function showConfirmation(b, mode) {
+  lastBooking = b;
+  $("#confirmTitle").textContent = mode === "sent" ? "Appointment requested" : "Finish in your email app";
+  $("#confirmText").textContent = mode === "sent"
+    ? `Thanks, ${b.name.split(" ")[0]}. We've received your request and will confirm it at ${b.email} shortly.`
+    : `Your email app opened with the request filled in. Press send there so we receive it. If nothing opened, email ${CONFIG.ownerEmail} or call ${CONFIG.phone}.`;
+  $("#confirmDetails").innerHTML = [
+    ["Service", b.service], ["Date", b.dateLabel], ["Time", `${b.timeLabel} – ${b.endLabel}`],
+    ["Price", b.priceLabel], ["Reference", b.ref]
+  ].map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+  const dlg = $("#confirmDialog");
+  if (typeof dlg.showModal === "function") dlg.showModal(); else dlg.setAttribute("open", "");
+}
+$("#icsBtn").addEventListener("click", () => {
+  const b = lastBooking; if (!b) return;
+  const icsEsc = t => String(t).replace(/\\/g, "\\\\").replace(/([,;])/g, "\\$1").replace(/\n/g, "\\n");
+  const stamp = (k, m) => k.replace(/-/g, "") + "T" + toHHMM(m).replace(":", "") + "00";
+  const start = toMin(b.time);
+  const ics = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", `PRODID:-//${icsEsc(CONFIG.salonName)}//Booking//EN`, "CALSCALE:GREGORIAN",
+    "BEGIN:VEVENT",
+    `UID:${b.ref}-${Date.now()}@salon-booking`,
+    `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").split(".")[0]}Z`,
+    `DTSTART:${stamp(b.date, start)}`,
+    `DTEND:${stamp(b.date, start + b.duration)}`,
+    `SUMMARY:${icsEsc(`${b.service} at ${CONFIG.salonName}`)}`,
+    `LOCATION:${icsEsc(CONFIG.address)}`,
+    `DESCRIPTION:${icsEsc(`Reference ${b.ref}. Pending confirmation. Questions: ${CONFIG.phone}`)}`,
+    "END:VEVENT", "END:VCALENDAR"
+  ].join("\r\n");
+  const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar;charset=utf-8" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: `appointment-${b.ref}.ics` });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+$("#againBtn").addEventListener("click", () => {
+  $("#confirmDialog").close?.();
+  form.reset();
+  Object.keys(RULES).forEach(n => { form.elements[n].removeAttribute("aria-invalid"); $(`#err-${n}`).textContent = ""; });
+  Object.assign(state, { service: null, date: null, time: null, triedSubmit: false });
+  renderAll();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+
+/* =================================================================
+   Init
+   ================================================================= */
+renderHeader();
+renderServices();
+renderWeekdays();
+renderAll();
+</script>
+</body>
+</html>
